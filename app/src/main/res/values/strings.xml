@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">SMS Forwarder</string>
+    <string name="dest_phone_hint">Enter destination phone number</string>
+    <string name="save_button">Save</string>
+</resources>

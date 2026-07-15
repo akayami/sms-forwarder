@@ -1,0 +1,97 @@
+name: Release
+
+# Builds a signed release APK on tag push and publishes it as a GitHub
+# release asset with a STABLE name (sms-forwarder-release.apk). The k3s
+# self-hosted F-Droid repo (devops: deploy/helm/personal/fdroid) polls
+# that fixed asset name every 5 min and rebuilds its signed index, so
+# the name must never change between releases — the version is carried
+# inside the APK (versionCode), not in the file name.
+#
+# Runs on the org's self-hosted ARC scale set (akayami-ops-arc); JDK +
+# Android SDK are installed per-job since the runner image ships neither.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   SMS_KEYSTORE_B64       base64 of the release keystore (.jks)
+#   SMS_KEYSTORE_PASSWORD  keystore + key password
+#   SMS_KEY_ALIAS          key alias inside the keystore
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # required by softprops/action-gh-release
+
+jobs:
+  build:
+    name: build + publish signed apk
+    runs-on: akayami-ops-arc
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        id: ver
+        run: |
+          TAG="${GITHUB_REF_NAME}"            # e.g. v1.2.3
+          NAME="${TAG#v}"                     # 1.2.3
+          # versionCode: pack MAJOR.MINOR.PATCH into a monotonically
+          # increasing int. MAJOR*10000 + MINOR*100 + PATCH (each < 100).
+          IFS='.' read -r MA MI PA <<<"$NAME"
+          CODE=$(( ${MA:-0} * 10000 + ${MI:-0} * 100 + ${PA:-0} ))
+          echo "version_name=$NAME" >>"$GITHUB_OUTPUT"
+          echo "version_code=$CODE" >>"$GITHUB_OUTPUT"
+          echo "Building $NAME (code $CODE) from $TAG"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore keystore from secret
+        env:
+          SMS_KEYSTORE_B64: ${{ secrets.SMS_KEYSTORE_B64 }}
+        run: |
+          mkdir -p keystores
+          printf '%s' "$SMS_KEYSTORE_B64" | base64 -d > keystores/release.jks
+          ls -la keystores
+
+      - name: Build signed release APK
+        env:
+          SMS_VERSION_CODE: ${{ steps.ver.outputs.version_code }}
+          SMS_VERSION_NAME: ${{ steps.ver.outputs.version_name }}
+          SMS_KEYSTORE_FILE: ${{ github.workspace }}/keystores/release.jks
+          SMS_KEYSTORE_PASSWORD: ${{ secrets.SMS_KEYSTORE_PASSWORD }}
+          SMS_KEY_ALIAS: ${{ secrets.SMS_KEY_ALIAS }}
+          SMS_KEY_PASSWORD: ${{ secrets.SMS_KEYSTORE_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Stage release asset (stable name)
+        id: apk
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/release/app-release.apk release/sms-forwarder-release.apk
+          ls -la release
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release/sms-forwarder-release.apk
+
+      - name: Clean up keystore
+        if: always()
+        run: rm -rf keystores

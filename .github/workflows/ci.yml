@@ -1,0 +1,51 @@
+name: CI
+
+# Validates that the app compiles and produces a debug APK on every push
+# and PR to main. Runs on the org's self-hosted ARC scale set
+# (akayami-ops-arc) on the k3s cluster — github-hosted ubuntu-latest is
+# out of org quota. That runner image bakes build-essential/node but NOT
+# the JDK or Android SDK, so we install both per-job.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build debug apk
+    runs-on: akayami-ops-arc
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble debug APK
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sms-forwarder-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
