@@ -7,8 +7,10 @@ name: Release
 # the name must never change between releases — the version is carried
 # inside the APK (versionCode), not in the file name.
 #
-# Runs on the org's self-hosted ARC scale set (akayami-ops-arc); JDK +
-# Android SDK are installed per-job since the runner image ships neither.
+# Runs on GitHub-hosted ubuntu-latest: this repo is public, so hosted
+# runners are free + unmetered and ship the Android SDK preinstalled.
+# (The self-hosted ARC pool is for the private repos on paid minutes;
+# its runner group blocks public repos.)
 #
 # Required repo secrets (Settings → Secrets and variables → Actions):
 #   SMS_KEYSTORE_B64       base64 of the release keystore (.jks)
@@ -27,7 +29,7 @@ permissions:
 jobs:
   build:
     name: build + publish signed apk
-    runs-on: akayami-ops-arc
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -51,12 +53,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install SDK packages
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4

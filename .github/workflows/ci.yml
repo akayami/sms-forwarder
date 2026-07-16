@@ -1,10 +1,11 @@
 name: CI
 
 # Validates that the app compiles and produces a debug APK on every push
-# and PR to main. Runs on the org's self-hosted ARC scale set
-# (akayami-ops-arc) on the k3s cluster — github-hosted ubuntu-latest is
-# out of org quota. That runner image bakes build-essential/node but NOT
-# the JDK or Android SDK, so we install both per-job.
+# and PR to main. Runs on GitHub-hosted ubuntu-latest: this repo is
+# public, so hosted runners are free + unmetered (the org's self-hosted
+# ARC pool exists for the *private* repos that consume paid minutes, and
+# its runner group blocks public repos anyway). ubuntu-latest ships the
+# Android SDK preinstalled, so no per-job SDK setup is needed.
 
 on:
   push:
@@ -19,7 +20,7 @@ permissions:
 jobs:
   build:
     name: build debug apk
-    runs-on: akayami-ops-arc
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -30,12 +31,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install SDK packages
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
